@@ -7,20 +7,42 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/docker/docker/pkg/stdcopy"
+	"uldocker/internal/command"
 	"uldocker/internal/docker"
 	"uldocker/pkg/types"
 )
 
-type containersLoadedMsg struct {
+type resourcesLoadedMsg struct {
 	containers []types.Container
+	images     []types.Image
+	volumes    []types.Volume
+	networks   []types.Network
 	err        error
 }
 
-func loadContainers() tea.Msg {
+func loadResources() tea.Msg {
 	containers, err := docker.ListContainers()
-	return containersLoadedMsg{
+	if err != nil {
+		return resourcesLoadedMsg{err: err}
+	}
+	images, err := docker.ListImages()
+	if err != nil {
+		return resourcesLoadedMsg{err: err}
+	}
+	volumes, err := docker.ListVolumes()
+	if err != nil {
+		return resourcesLoadedMsg{err: err}
+	}
+	networks, err := docker.ListNetworks()
+	if err != nil {
+		return resourcesLoadedMsg{err: err}
+	}
+
+	return resourcesLoadedMsg{
 		containers: containers,
-		err:        err,
+		images:     images,
+		volumes:    volumes,
+		networks:   networks,
 	}
 }
 
@@ -86,20 +108,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 		return m, nil
 
-	case containersLoadedMsg:
+	case resourcesLoadedMsg:
 		m.Loading = false
+		if msg.err != nil {
+			m.Err = msg.err
+			return m, nil
+		}
 		m.Containers = msg.containers
-		m.Err = msg.err
+		m.Images = msg.images
+		m.Volumes = msg.volumes
+		m.Networks = msg.networks
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.CommandMode {
+			switch msg.Type {
+			case tea.KeyEnter:
+				return m.executeCommand()
+
+			case tea.KeyEsc:
+				m.CommandMode = false
+				return m, nil
+
+			case tea.KeyBackspace, tea.KeyDelete:
+				if len(m.CommandInput) > 0 {
+					m.CommandInput = m.CommandInput[:len(m.CommandInput)-1]
+				}
+
+			default:
+				m.CommandInput += msg.String()
+			}
+
+			return m, nil
+		}
+
 		switch msg.String() {
+		case ":":
+			m.CommandMode = true
+			m.CommandInput = ""
+			m.CommandError = ""
+			return m, nil
+
 		case "esc", "1", "2", "3", "4", "j", "k", "up", "down":
 			if msg.String() != "enter" && m.LogsCancel != nil {
 				m.LogsCancel()
 				m.LogsCancel = nil
 				m.Streaming = false
 			}
+			// fallthrough to handle the actual key
 		}
 
 		switch msg.String() {
@@ -108,7 +164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "r":
 			m.Loading = true
-			return m, loadContainers
+			return m, loadResources
 
 		case "j", "down":
 			m.moveDown()
@@ -207,4 +263,25 @@ func (m *Model) getActiveListLength() int {
 		default:
 			return 0
 	}
+}
+
+func (m Model) executeCommand() (tea.Model, tea.Cmd) {
+	cmd := command.Parse(m.CommandInput)
+
+	// Context Awareness
+	if len(cmd.Args) == 0 && m.ActiveTab == TabContainers && len(m.Containers) > 0 {
+		idx := m.SelectedIndexes[TabContainers]
+		cmd.Args = append(cmd.Args, m.Containers[idx].Name)
+	}
+
+	err := command.Execute(cmd)
+
+	if err != nil {
+		m.CommandError = err.Error()
+	} else {
+		m.CommandError = ""
+	}
+
+	m.CommandMode = false
+	return m, nil
 }

@@ -9,14 +9,14 @@ type Command struct {
 	Args []string
 }
 
-func Parse(input string) *Command {
-	input = strings.TrimPrefix(input, ":")
+func Parse(input string) Command {
 	parts := strings.Fields(input)
+
 	if len(parts) == 0 {
-		return nil
+		return Command{}
 	}
 
-	return &Command{
+	return Command{
 		Name: parts[0],
 		Args: parts[1:],
 	}

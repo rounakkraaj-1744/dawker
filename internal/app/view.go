@@ -38,7 +38,6 @@ func (m Model) renderLeftPanel() string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, tabs, "", list)
 	
-	// Calculate dynamic width based on terminal size, ensure minimum width
 	w := (m.Width / 2) - 4
 	if w < 30 {
 		w = 30
@@ -46,7 +45,7 @@ func (m Model) renderLeftPanel() string {
 	
 	return ui.PanelStyle.
 		Width(w).
-		Height(m.Height - 6). // account for footer and margins
+		Height(m.Height - 6).
 		Render(content)
 }
 
@@ -196,6 +195,17 @@ func (m Model) renderRightPanel() string {
 }
 
 func (m Model) renderFooter() string {
+	if m.CommandMode {
+		footer := ":" + m.CommandInput
+		if m.CommandError != "" {
+			footer += "  " + ui.StatusExitedStyle.Render("Error: "+m.CommandError)
+		}
+		return ui.FooterStyle.Width(m.Width).Render(footer)
+	}
+
 	helpText := "j/k: move | enter: select | 1-4: switch tabs | : command | q: quit"
+	if m.CommandError != "" {
+		helpText += "  " + ui.StatusExitedStyle.Render("Error: "+m.CommandError)
+	}
 	return ui.FooterStyle.Width(m.Width).Render(helpText)
 }
