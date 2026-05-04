@@ -17,8 +17,8 @@
 # Go workspace file
 go.work
 
-# uldocker specific binary
-uldocker
+# dawker specific binary
+dawker
 
 # IDEs
 .idea/

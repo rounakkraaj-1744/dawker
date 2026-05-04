@@ -2,7 +2,8 @@ package app
 
 import (
 	"context"
-	"uldocker/pkg/types"
+	"dawker/pkg/types"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -16,28 +17,28 @@ const (
 )
 
 type Model struct {
-	ActiveTab Tab
+	ActiveTab       Tab
 	SelectedIndexes map[Tab]int
 	ShowDetails     bool
-	Width  int
-	Height int
-	Containers []types.Container
-	Images   []types.Image
-	Volumes  []types.Volume
-	Networks []types.Network
-	Loading bool
-	Err     error
-	Logs        []string
-	Streaming   bool
-	CurrentID   string
-	LogsCancel  context.CancelFunc
-	CommandMode  bool
-	CommandInput string
-	CommandError string
-	CommandResult string
-	Suggestions  []string
-	History      []string
-	HistoryIndex int
+	Width           int
+	Height          int
+	Containers      []types.Container
+	Images          []types.Image
+	Volumes         []types.Volume
+	Networks        []types.Network
+	Loading         bool
+	Err             error
+	Logs            []string
+	Streaming       bool
+	CurrentID       string
+	LogsCancel      context.CancelFunc
+	CommandMode     bool
+	CommandInput    string
+	CommandError    string
+	CommandResult   string
+	Suggestions     []string
+	History         []string
+	HistoryIndex    int
 }
 
 func NewModel() Model {
@@ -57,7 +58,6 @@ func NewModel() Model {
 		Images:     []types.Image{},
 		Volumes:    []types.Volume{},
 		Networks:   []types.Network{},
-
 
 		Logs:      []string{},
 		Streaming: false,

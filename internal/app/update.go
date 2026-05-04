@@ -2,13 +2,14 @@ package app
 
 import (
 	"context"
+	"dawker/internal/command"
+	"dawker/internal/docker"
+	"dawker/pkg/types"
 	"io"
 	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/docker/docker/pkg/stdcopy"
-	"uldocker/internal/command"
-	"uldocker/internal/docker"
-	"uldocker/pkg/types"
 )
 
 type resourcesLoadedMsg struct {
@@ -139,7 +140,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return m, nil
 }
-
 
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.CommandResult != "" {

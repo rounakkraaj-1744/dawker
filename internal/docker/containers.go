@@ -1,31 +1,31 @@
 package docker
 
 import (
+	"dawker/pkg/types"
 	"strings"
-	"uldocker/pkg/types"
+
 	"github.com/docker/docker/api/types/container"
 )
 
-
 func ListContainers() ([]types.Container, error) {
-	cli, err:=NewClient()
+	cli, err := NewClient()
 
 	if err != nil {
 		return nil, err
 	}
 
-	ctx:=GetContext()
+	ctx := GetContext()
 
-	containers, err:=cli.ContainerList(ctx, container.ListOptions{All: true})
-	if err!=nil{
+	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
 		return nil, err
 	}
 
-	var result[]types.Container
+	var result []types.Container
 
 	for _, c := range containers {
-		name:=""
-		if len (c.Names) > 0 {
+		name := ""
+		if len(c.Names) > 0 {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 

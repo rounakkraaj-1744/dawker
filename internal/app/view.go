@@ -1,10 +1,11 @@
 package app
 
 import (
+	"dawker/internal/command"
+	"dawker/internal/ui"
 	"fmt"
 	"strings"
-	"uldocker/internal/command"
-	"uldocker/internal/ui"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -88,9 +89,9 @@ func (m Model) renderContainers() string {
 		line := fmt.Sprintf("%s  %s %s", c.ID, c.Name, status)
 
 		if i == m.SelectedIndexes[TabContainers] {
-			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ "+line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  "+line) + "\n")
 		}
 	}
 	return sb.String()
@@ -106,9 +107,9 @@ func (m Model) renderImages() string {
 		line := fmt.Sprintf("%s:%s  [%s]", img.Repository, img.Tag, img.Size)
 
 		if i == m.SelectedIndexes[TabImages] {
-			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ "+line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  "+line) + "\n")
 		}
 	}
 	return sb.String()
@@ -124,9 +125,9 @@ func (m Model) renderVolumes() string {
 		line := fmt.Sprintf("%s  (%s)", v.Name, v.Mountpoint)
 
 		if i == m.SelectedIndexes[TabVolumes] {
-			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ "+line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  "+line) + "\n")
 		}
 	}
 	return sb.String()
@@ -142,9 +143,9 @@ func (m Model) renderNetworks() string {
 		line := fmt.Sprintf("%s  (%s)", n.Name, n.Driver)
 
 		if i == m.SelectedIndexes[TabNetworks] {
-			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ "+line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  "+line) + "\n")
 		}
 	}
 	return sb.String()
@@ -263,7 +264,7 @@ func (m Model) renderFooter() string {
 		footer := lipgloss.JoinHorizontal(lipgloss.Bottom, indicator, " ", prompt, suggestions)
 
 		if m.CommandError != "" {
-			footer += "  " + ui.StatusExitedStyle.Render("✖ " + m.CommandError)
+			footer += "  " + ui.StatusExitedStyle.Render("✖ "+m.CommandError)
 		}
 
 		preview := m.renderCommandPreview()

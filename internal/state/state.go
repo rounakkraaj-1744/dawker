@@ -1,15 +1,15 @@
 package state
 
 import (
-	"uldocker/pkg/types"
+	"dawker/pkg/types"
 )
 
 type AppState struct {
-	Containers      []types.Container
-	SelectedIndex   int
-	IsCommandMode   bool
-	CommandInput    string
-	LastAction      string
+	Containers    []types.Container
+	SelectedIndex int
+	IsCommandMode bool
+	CommandInput  string
+	LastAction    string
 }
 
 func NewAppState() *AppState {

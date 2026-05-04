@@ -1,13 +1,13 @@
 package command
 
 import (
-	"uldocker/pkg/types"
+	"dawker/pkg/types"
 )
 
 type Context struct {
-	Targets    []types.Container
-	ImageTargets []types.Image
-	VolumeTargets []types.Volume
+	Targets        []types.Container
+	ImageTargets   []types.Image
+	VolumeTargets  []types.Volume
 	NetworkTargets []types.Network
 }
 

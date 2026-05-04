@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"uldocker/internal/app"
+	"dawker/internal/app"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
