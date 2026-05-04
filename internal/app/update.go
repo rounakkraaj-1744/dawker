@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/docker/docker/pkg/stdcopy"
 	"uldocker/internal/command"
@@ -19,6 +18,17 @@ type resourcesLoadedMsg struct {
 	networks   []types.Network
 	err        error
 }
+
+type logStreamStartedMsg struct {
+	reader io.Reader
+}
+
+type logChunkMsg struct {
+	reader io.Reader
+	chunk  string
+}
+
+type streamEndedMsg struct{}
 
 func loadResources() tea.Msg {
 	containers, err := docker.ListContainers()
@@ -45,17 +55,6 @@ func loadResources() tea.Msg {
 		networks:   networks,
 	}
 }
-
-type logStreamStartedMsg struct {
-	reader io.Reader
-}
-
-type logChunkMsg struct {
-	reader io.Reader
-	chunk  string
-}
-
-type streamEndedMsg struct{}
 
 func startStreamCmd(ctx context.Context, containerID string) tea.Cmd {
 	return func() tea.Msg {
@@ -100,9 +99,11 @@ func readStreamCmd(reader io.Reader) tea.Cmd {
 	}
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+// --- Update ---
 
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
@@ -114,116 +115,174 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Err = msg.err
 			return m, nil
 		}
+		m.Err = nil
 		m.Containers = msg.containers
 		m.Images = msg.images
 		m.Volumes = msg.volumes
 		m.Networks = msg.networks
+		m.clampAllIndexes()
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.CommandResult != "" {
-			m.CommandResult = ""
-		}
+		return m.handleKeyMsg(msg)
 
-		if m.CommandMode {
-			switch msg.Type {
-			case tea.KeyEnter:
-				return m.executeCommand()
+	case logStreamStartedMsg:
+		return m, readStreamCmd(msg.reader)
 
-			case tea.KeyEsc:
-				m.CommandMode = false
-				m.Suggestions = nil
-				return m, nil
+	case logChunkMsg:
+		return m.handleLogChunk(msg)
 
-			case tea.KeyUp:
-				if len(m.History) > 0 {
-					if m.HistoryIndex == -1 {
-						m.HistoryIndex = len(m.History) - 1
-					} else if m.HistoryIndex > 0 {
-						m.HistoryIndex--
-					}
-					m.CommandInput = m.History[m.HistoryIndex]
-					m.updateSuggestions()
-				}
-				return m, nil
+	case streamEndedMsg:
+		m.Streaming = false
+		return m, nil
+	}
 
-			case tea.KeyDown:
-				if len(m.History) > 0 && m.HistoryIndex != -1 {
-					if m.HistoryIndex < len(m.History)-1 {
-						m.HistoryIndex++
-						m.CommandInput = m.History[m.HistoryIndex]
-					} else {
-						m.HistoryIndex = -1
-						m.CommandInput = ""
-					}
-					m.updateSuggestions()
-				}
-				return m, nil
+	return m, nil
+}
 
-			case tea.KeyBackspace, tea.KeyDelete:
-				if len(m.CommandInput) > 0 {
-					m.CommandInput = m.CommandInput[:len(m.CommandInput)-1]
-				}
-				m.updateSuggestions()
 
-			default:
-				m.CommandInput += msg.String()
-				m.updateSuggestions()
+func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.CommandResult != "" {
+		m.CommandResult = ""
+	}
+	if m.CommandError != "" && !m.CommandMode {
+		m.CommandError = ""
+	}
+
+	if m.CommandMode {
+		return m.handleCommandModeKey(msg)
+	}
+
+	return m.handleNormalModeKey(msg)
+}
+
+func (m Model) handleCommandModeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return m.executeCommand()
+
+	case tea.KeyEsc:
+		m.CommandMode = false
+		m.CommandInput = ""
+		m.CommandError = ""
+		m.Suggestions = nil
+		return m, nil
+
+	case tea.KeyUp:
+		if len(m.History) > 0 {
+			if m.HistoryIndex == -1 {
+				m.HistoryIndex = len(m.History) - 1
+			} else if m.HistoryIndex > 0 {
+				m.HistoryIndex--
 			}
-
-			return m, nil
+			m.CommandInput = m.History[m.HistoryIndex]
+			m.updateSuggestions()
 		}
+		return m, nil
 
-		switch msg.String() {
-		case ":":
-			m.CommandMode = true
-			m.CommandInput = ""
-			m.CommandError = ""
-			return m, nil
-
-		case "esc", "1", "2", "3", "4", "j", "k", "up", "down":
-			if msg.String() != "enter" && m.LogsCancel != nil {
-				m.LogsCancel()
-				m.LogsCancel = nil
-				m.Streaming = false
+	case tea.KeyDown:
+		if len(m.History) > 0 && m.HistoryIndex != -1 {
+			if m.HistoryIndex < len(m.History)-1 {
+				m.HistoryIndex++
+				m.CommandInput = m.History[m.HistoryIndex]
+			} else {
+				m.HistoryIndex = -1
+				m.CommandInput = ""
 			}
-			// fallthrough to handle the actual key
+			m.updateSuggestions()
 		}
+		return m, nil
 
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
+	case tea.KeyTab:
+		if len(m.Suggestions) > 0 {
+			parts := strings.Fields(m.CommandInput)
+			if len(parts) <= 1 && !strings.HasSuffix(m.CommandInput, " ") {
+				m.CommandInput = m.Suggestions[0] + " "
+			} else {
+				if len(parts) > 1 {
+					parts[len(parts)-1] = m.Suggestions[0]
+				} else {
+					parts = append(parts, m.Suggestions[0])
+				}
+				m.CommandInput = strings.Join(parts, " ") + " "
+			}
+			m.updateSuggestions()
+		}
+		return m, nil
 
-		case "r":
-			m.Loading = true
-			return m, loadResources
+	case tea.KeyBackspace, tea.KeyDelete:
+		if len(m.CommandInput) > 0 {
+			m.CommandInput = m.CommandInput[:len(m.CommandInput)-1]
+		}
+		m.updateSuggestions()
+		return m, nil
 
-		case "j", "down":
-			m.moveDown()
+	case tea.KeySpace:
+		m.CommandInput += " "
+		m.updateSuggestions()
+		return m, nil
 
-		case "k", "up":
-			m.moveUp()
+	default:
+		ch := msg.String()
+		if len(ch) == 1 || (len(ch) > 1 && ch[0] != 0x1b) {
+			m.CommandInput += ch
+			m.updateSuggestions()
+		}
+		return m, nil
+	}
+}
 
-		case "1":
-			m.ActiveTab = TabContainers
+func (m Model) handleNormalModeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
 
-		case "2":
-			m.ActiveTab = TabImages
+	switch key {
+	case "1", "2", "3", "4", "j", "k", "up", "down", "esc":
+		m.cancelStream()
+	}
 
-		case "3":
-			m.ActiveTab = TabVolumes
+	switch key {
+	case "q", "ctrl+c":
+		m.cancelStream()
+		return m, tea.Quit
 
-		case "4":
-			m.ActiveTab = TabNetworks
+	case ":":
+		m.CommandMode = true
+		m.CommandInput = ""
+		m.CommandError = ""
+		m.CommandResult = ""
+		m.Suggestions = nil
+		m.HistoryIndex = -1
+		return m, nil
 
-		case "enter":
-			if m.ActiveTab == TabContainers && len(m.Containers) > 0 {
-				idx := m.SelectedIndexes[TabContainers]
+	case "r":
+		m.Loading = true
+		return m, loadResources
+
+	case "j", "down":
+		m.moveDown()
+
+	case "k", "up":
+		m.moveUp()
+
+	case "1":
+		m.ActiveTab = TabContainers
+
+	case "2":
+		m.ActiveTab = TabImages
+
+	case "3":
+		m.ActiveTab = TabVolumes
+
+	case "4":
+		m.ActiveTab = TabNetworks
+
+	case "enter":
+		if m.ActiveTab == TabContainers && len(m.Containers) > 0 {
+			idx := m.SelectedIndexes[TabContainers]
+			if idx < len(m.Containers) {
 				container := m.Containers[idx]
 
-				if m.LogsCancel != nil {
-					m.LogsCancel()
-				}
+				m.cancelStream()
 
 				m.Logs = []string{}
 				m.Streaming = true
@@ -234,41 +293,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				return m, startStreamCmd(ctx, container.ID)
 			}
-			m.ShowDetails = !m.ShowDetails
 		}
-		return m, nil
-
-	case logStreamStartedMsg:
-		return m, readStreamCmd(msg.reader)
-
-	case logChunkMsg:
-		lines := strings.Split(string(msg.chunk), "\n")
-
-		if len(m.Logs) == 0 {
-			m.Logs = lines
-		} else {
-			m.Logs[len(m.Logs)-1] += lines[0]
-			if len(lines) > 1 {
-				m.Logs = append(m.Logs, lines[1:]...)
-			}
-		}
-
-		if len(m.Logs) > 100 {
-			m.Logs = m.Logs[len(m.Logs)-100:]
-		}
-		return m, readStreamCmd(msg.reader)
-
-	case streamEndedMsg:
-		return m, nil
+		m.ShowDetails = true
 	}
 
 	return m, nil
 }
 
-func (m *Model) moveDown() {
-	idx := m.SelectedIndexes[m.ActiveTab]
-	max := m.getActiveListLength()
+func (m Model) handleLogChunk(msg logChunkMsg) (tea.Model, tea.Cmd) {
+	lines := strings.Split(msg.chunk, "\n")
 
+	if len(m.Logs) == 0 {
+		m.Logs = lines
+	} else {
+		m.Logs[len(m.Logs)-1] += lines[0]
+		if len(lines) > 1 {
+			m.Logs = append(m.Logs, lines[1:]...)
+		}
+	}
+
+	if len(m.Logs) > 500 {
+		m.Logs = m.Logs[len(m.Logs)-500:]
+	}
+
+	return m, readStreamCmd(msg.reader)
+}
+
+func (m *Model) moveDown() {
+	max := m.getActiveListLength()
+	if max == 0 {
+		return
+	}
+	idx := m.SelectedIndexes[m.ActiveTab]
 	if idx < max-1 {
 		m.SelectedIndexes[m.ActiveTab] = idx + 1
 	}
@@ -276,7 +332,6 @@ func (m *Model) moveDown() {
 
 func (m *Model) moveUp() {
 	idx := m.SelectedIndexes[m.ActiveTab]
-
 	if idx > 0 {
 		m.SelectedIndexes[m.ActiveTab] = idx - 1
 	}
@@ -284,17 +339,46 @@ func (m *Model) moveUp() {
 
 func (m *Model) getActiveListLength() int {
 	switch m.ActiveTab {
-		case TabContainers:
-			return len(m.Containers)
-		case TabImages:
-			return len(m.Images)
-		case TabVolumes:
-			return len(m.Volumes)
-		case TabNetworks:
-			return len(m.Networks)
-		default:
-			return 0
+	case TabContainers:
+		return len(m.Containers)
+	case TabImages:
+		return len(m.Images)
+	case TabVolumes:
+		return len(m.Volumes)
+	case TabNetworks:
+		return len(m.Networks)
+	default:
+		return 0
 	}
+}
+
+func (m *Model) clampAllIndexes() {
+	for _, tab := range []Tab{TabContainers, TabImages, TabVolumes, TabNetworks} {
+		max := 0
+		switch tab {
+		case TabContainers:
+			max = len(m.Containers)
+		case TabImages:
+			max = len(m.Images)
+		case TabVolumes:
+			max = len(m.Volumes)
+		case TabNetworks:
+			max = len(m.Networks)
+		}
+		if max == 0 {
+			m.SelectedIndexes[tab] = 0
+		} else if m.SelectedIndexes[tab] >= max {
+			m.SelectedIndexes[tab] = max - 1
+		}
+	}
+}
+
+func (m *Model) cancelStream() {
+	if m.LogsCancel != nil {
+		m.LogsCancel()
+		m.LogsCancel = nil
+	}
+	m.Streaming = false
 }
 
 func (m Model) executeCommand() (tea.Model, tea.Cmd) {
@@ -305,33 +389,31 @@ func (m Model) executeCommand() (tea.Model, tea.Cmd) {
 	}
 
 	var targets []types.Container
-	var images  []types.Image
+	var images []types.Image
 	var volumes []types.Volume
 	var networks []types.Network
 
-	// Context Awareness based on active tab
 	if len(cmd.Args) == 0 {
 		idx := m.SelectedIndexes[m.ActiveTab]
 		switch m.ActiveTab {
 		case TabContainers:
-			if len(m.Containers) > idx {
+			if idx < len(m.Containers) {
 				targets = []types.Container{m.Containers[idx]}
 			}
 		case TabImages:
-			if len(m.Images) > idx {
+			if idx < len(m.Images) {
 				images = []types.Image{m.Images[idx]}
 			}
 		case TabVolumes:
-			if len(m.Volumes) > idx {
+			if idx < len(m.Volumes) {
 				volumes = []types.Volume{m.Volumes[idx]}
 			}
 		case TabNetworks:
-			if len(m.Networks) > idx {
+			if idx < len(m.Networks) {
 				networks = []types.Network{m.Networks[idx]}
 			}
 		}
 	} else {
-		// Smart Resolution
 		switch cmd.Name {
 		case "rmi":
 			images = command.MatchImages(cmd.Args[0], m.Images)
@@ -340,7 +422,6 @@ func (m Model) executeCommand() (tea.Model, tea.Cmd) {
 		case "rmn":
 			networks = command.MatchNetworks(cmd.Args[0], m.Networks)
 		case "prune":
-			// Prune acts on everything
 		default:
 			targets = command.ResolveTargets(cmd.Args, m.Containers)
 		}
@@ -348,24 +429,25 @@ func (m Model) executeCommand() (tea.Model, tea.Cmd) {
 
 	resultMsg, err := command.Execute(cmd, targets, images, volumes, networks)
 
+	m.CommandMode = false
+	m.Suggestions = nil
+
 	if err != nil {
 		m.CommandError = err.Error()
 		m.CommandResult = ""
-	} else {
-		m.CommandError = ""
-		m.CommandResult = resultMsg
-		
-		// History
-		m.History = append(m.History, m.CommandInput)
-		m.HistoryIndex = -1
+		return m, nil
 	}
 
-	m.CommandMode = false
-	m.Suggestions = nil
-	if err == nil {
-		return m, loadResources
+	m.CommandError = ""
+	m.CommandResult = resultMsg
+
+	m.History = append(m.History, m.CommandInput)
+	if len(m.History) > 50 {
+		m.History = m.History[len(m.History)-50:]
 	}
-	return m, nil
+	m.HistoryIndex = -1
+
+	return m, loadResources
 }
 
 func (m *Model) updateSuggestions() {
@@ -381,15 +463,11 @@ func (m *Model) updateSuggestions() {
 	}
 
 	if len(parts) == 1 && !strings.HasSuffix(m.CommandInput, " ") {
-		// Still typing the command
 		m.Suggestions = command.Suggest(parts[0])
 	} else {
-		// Typing arguments
 		cmdName := parts[0]
 		argQuery := ""
-		if strings.HasSuffix(m.CommandInput, " ") {
-			// Ready for next arg
-		} else {
+		if !strings.HasSuffix(m.CommandInput, " ") {
 			argQuery = parts[len(parts)-1]
 		}
 		m.Suggestions = command.SuggestArgs(cmdName, argQuery, m.Containers, m.Images, m.Volumes, m.Networks)

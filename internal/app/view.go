@@ -26,24 +26,30 @@ func (m Model) renderLeftPanel() string {
 	tabs := m.renderTabs()
 	list := ""
 
-	switch m.ActiveTab {
-	case TabContainers:
-		list = m.renderContainers()
-	case TabImages:
-		list = m.renderImages()
-	case TabVolumes:
-		list = m.renderVolumes()
-	case TabNetworks:
-		list = m.renderNetworks()
+	if m.Loading {
+		list = ui.ItemStyle.Render("⏳ Loading resources...")
+	} else if m.Err != nil {
+		list = ui.StatusExitedStyle.Render("✖ " + m.Err.Error())
+	} else {
+		switch m.ActiveTab {
+		case TabContainers:
+			list = m.renderContainers()
+		case TabImages:
+			list = m.renderImages()
+		case TabVolumes:
+			list = m.renderVolumes()
+		case TabNetworks:
+			list = m.renderNetworks()
+		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, tabs, "", list)
-	
+
 	w := (m.Width / 2) - 4
 	if w < 30 {
 		w = 30
 	}
-	
+
 	return ui.PanelStyle.
 		Width(w).
 		Height(m.Height - 6).
@@ -66,75 +72,80 @@ func (m Model) renderTabs() string {
 }
 
 func (m Model) renderContainers() string {
+	if len(m.Containers) == 0 {
+		return ui.EmptyStateStyle.Render("No containers found. Press r to refresh.")
+	}
+
 	var sb strings.Builder
 	for i, c := range m.Containers {
 		statusStyle := ui.StatusRunningStyle
-		if c.Status == "exited" {
+		statusText := strings.ToLower(c.Status)
+		if strings.Contains(statusText, "exited") || strings.Contains(statusText, "dead") {
 			statusStyle = ui.StatusExitedStyle
 		}
 
 		status := statusStyle.Render(fmt.Sprintf("(%s)", c.Status))
-		line := fmt.Sprintf("%s - %s %s", c.ID, c.Name, status)
+		line := fmt.Sprintf("%s  %s %s", c.ID, c.Name, status)
 
 		if i == m.SelectedIndexes[TabContainers] {
-			sb.WriteString(ui.SelectedItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
 		}
-	}
-	if len(m.Containers) == 0 {
-		sb.WriteString(ui.ItemStyle.Render("No containers found."))
 	}
 	return sb.String()
 }
 
 func (m Model) renderImages() string {
+	if len(m.Images) == 0 {
+		return ui.EmptyStateStyle.Render("No images found. Press r to refresh.")
+	}
+
 	var sb strings.Builder
 	for i, img := range m.Images {
-		line := fmt.Sprintf("%s:%s [%s]", img.Repository, img.Tag, img.Size)
+		line := fmt.Sprintf("%s:%s  [%s]", img.Repository, img.Tag, img.Size)
 
 		if i == m.SelectedIndexes[TabImages] {
-			sb.WriteString(ui.SelectedItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
 		}
-	}
-	if len(m.Images) == 0 {
-		sb.WriteString(ui.ItemStyle.Render("No images found."))
 	}
 	return sb.String()
 }
 
 func (m Model) renderVolumes() string {
+	if len(m.Volumes) == 0 {
+		return ui.EmptyStateStyle.Render("No volumes found. Press r to refresh.")
+	}
+
 	var sb strings.Builder
 	for i, v := range m.Volumes {
-		line := fmt.Sprintf("%s (%s)", v.Name, v.Mountpoint)
+		line := fmt.Sprintf("%s  (%s)", v.Name, v.Mountpoint)
 
 		if i == m.SelectedIndexes[TabVolumes] {
-			sb.WriteString(ui.SelectedItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
 		}
-	}
-	if len(m.Volumes) == 0 {
-		sb.WriteString(ui.ItemStyle.Render("No volumes found."))
 	}
 	return sb.String()
 }
 
 func (m Model) renderNetworks() string {
+	if len(m.Networks) == 0 {
+		return ui.EmptyStateStyle.Render("No networks found. Press r to refresh.")
+	}
+
 	var sb strings.Builder
 	for i, n := range m.Networks {
-		line := fmt.Sprintf("%s (%s driver)", n.Name, n.Driver)
+		line := fmt.Sprintf("%s  (%s)", n.Name, n.Driver)
 
 		if i == m.SelectedIndexes[TabNetworks] {
-			sb.WriteString(ui.SelectedItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.SelectedItemStyle.Render("▸ " + line) + "\n")
 		} else {
-			sb.WriteString(ui.ItemStyle.Render(line) + "\n")
+			sb.WriteString(ui.ItemStyle.Render("  " + line) + "\n")
 		}
-	}
-	if len(m.Networks) == 0 {
-		sb.WriteString(ui.ItemStyle.Render("No networks found."))
 	}
 	return sb.String()
 }
@@ -145,43 +156,76 @@ func (m Model) renderRightPanel() string {
 		w = 30
 	}
 
-	content := ""
+	panelHeight := m.Height - 6
+	visibleLines := panelHeight - 4
+	if visibleLines < 5 {
+		visibleLines = 5
+	}
+
+	var content string
 
 	if m.Streaming {
 		if len(m.Logs) == 0 {
-			content = "Loading logs..."
+			content = ui.EmptyStateStyle.Render("⏳ Waiting for logs...")
 		} else {
-			output := ""
 			start := 0
-			if len(m.Logs) > 20 {
-				start = len(m.Logs) - 20
+			if len(m.Logs) > visibleLines {
+				start = len(m.Logs) - visibleLines
 			}
 
+			var sb strings.Builder
 			for _, line := range m.Logs[start:] {
-				output += line + "\n"
+				if len(line) > w-4 {
+					line = line[:w-7] + "..."
+				}
+				sb.WriteString(line + "\n")
 			}
-			content = output
+			content = sb.String()
 		}
+	} else if m.Err != nil {
+		content = ui.StatusExitedStyle.Render("✖ Docker error: " + m.Err.Error())
 	} else if !m.ShowDetails {
-		content = "Select an item to view details"
+		content = ui.EmptyStateStyle.Render("Press enter on a container to stream logs.")
 	} else {
 		idx := m.SelectedIndexes[m.ActiveTab]
 		switch m.ActiveTab {
 		case TabContainers:
-			if len(m.Containers) > idx {
-				content = fmt.Sprintf("Viewing logs for %s", m.Containers[idx].Name)
+			if idx < len(m.Containers) {
+				c := m.Containers[idx]
+				content = fmt.Sprintf(
+					"%s\n%s\n%s",
+					ui.TitleStyle.Render("Container: "+c.Name),
+					fmt.Sprintf("  ID:     %s", c.ID),
+					fmt.Sprintf("  Status: %s", c.Status),
+				)
 			}
 		case TabImages:
-			if len(m.Images) > idx {
-				content = fmt.Sprintf("Image details: %s:%s", m.Images[idx].Repository, m.Images[idx].Tag)
+			if idx < len(m.Images) {
+				img := m.Images[idx]
+				content = fmt.Sprintf(
+					"%s\n%s\n%s",
+					ui.TitleStyle.Render("Image: "+img.Repository),
+					fmt.Sprintf("  Tag:  %s", img.Tag),
+					fmt.Sprintf("  Size: %s", img.Size),
+				)
 			}
 		case TabVolumes:
-			if len(m.Volumes) > idx {
-				content = fmt.Sprintf("Volume details: %s", m.Volumes[idx].Name)
+			if idx < len(m.Volumes) {
+				v := m.Volumes[idx]
+				content = fmt.Sprintf(
+					"%s\n%s",
+					ui.TitleStyle.Render("Volume: "+v.Name),
+					fmt.Sprintf("  Mount: %s", v.Mountpoint),
+				)
 			}
 		case TabNetworks:
-			if len(m.Networks) > idx {
-				content = fmt.Sprintf("Network details: %s", m.Networks[idx].Name)
+			if idx < len(m.Networks) {
+				n := m.Networks[idx]
+				content = fmt.Sprintf(
+					"%s\n%s",
+					ui.TitleStyle.Render("Network: "+n.Name),
+					fmt.Sprintf("  Driver: %s", n.Driver),
+				)
 			}
 		}
 	}
@@ -191,26 +235,37 @@ func (m Model) renderRightPanel() string {
 
 	return ui.PanelStyle.
 		Width(w).
-		Height(m.Height - 6).
+		Height(panelHeight).
 		Render(body)
 }
 
 func (m Model) renderFooter() string {
 	if m.CommandMode {
-		indicator := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Render("-- COMMAND --")
-		prompt := ":" + m.CommandInput
-		
+		indicator := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("208")).
+			Bold(true).
+			Render("-- COMMAND --")
+
+		cursor := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("255")).
+			Bold(true).
+			Render("█")
+
+		prompt := ":" + m.CommandInput + cursor
+
 		suggestions := ""
 		if len(m.Suggestions) > 0 {
-			suggestions = "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Join(m.Suggestions, " | "))
+			suggestions = "  " + lipgloss.NewStyle().
+				Foreground(lipgloss.Color("240")).
+				Render(strings.Join(m.Suggestions, " | "))
 		}
 
 		footer := lipgloss.JoinHorizontal(lipgloss.Bottom, indicator, " ", prompt, suggestions)
-		
+
 		if m.CommandError != "" {
-			footer += "  " + ui.StatusExitedStyle.Render("Error: "+m.CommandError)
+			footer += "  " + ui.StatusExitedStyle.Render("✖ " + m.CommandError)
 		}
-		
+
 		preview := m.renderCommandPreview()
 		if preview != "" {
 			return ui.FooterStyle.Width(m.Width).Render(preview + "\n" + footer)
@@ -219,11 +274,13 @@ func (m Model) renderFooter() string {
 		return ui.FooterStyle.Width(m.Width).Render(footer)
 	}
 
-	helpText := "j/k: move | enter: select | 1-4: switch tabs | : command | q: quit"
+	helpText := "j/k: navigate │ enter: select │ 1-4: tabs │ r: refresh │ : command │ q: quit"
 	if m.CommandError != "" {
 		helpText = ui.StatusExitedStyle.Render("✖ " + m.CommandError)
 	} else if m.CommandResult != "" {
 		helpText = ui.StatusRunningStyle.Render("✔ " + m.CommandResult)
+	} else if m.Loading {
+		helpText = "⏳ Loading..."
 	}
 	return ui.FooterStyle.Width(m.Width).Render(helpText)
 }
@@ -238,52 +295,56 @@ func (m Model) renderCommandPreview() string {
 		return ""
 	}
 
+	if !command.IsValidCommand(cmd.Name) {
+		if suggestion := command.ClosestCommand(cmd.Name); suggestion != "" {
+			return lipgloss.NewStyle().
+				Foreground(lipgloss.Color("208")).
+				Italic(true).
+				Render(fmt.Sprintf("Did you mean: %s?", suggestion))
+		}
+		return ""
+	}
+
 	var names []string
 
-	// Smart Context Awareness
 	if len(cmd.Args) == 0 {
 		idx := m.SelectedIndexes[m.ActiveTab]
 		switch m.ActiveTab {
 		case TabContainers:
-			if len(m.Containers) > idx {
+			if idx < len(m.Containers) {
 				names = []string{m.Containers[idx].Name}
 			}
 		case TabImages:
-			if len(m.Images) > idx {
+			if idx < len(m.Images) {
 				names = []string{m.Images[idx].Repository}
 			}
 		case TabVolumes:
-			if len(m.Volumes) > idx {
+			if idx < len(m.Volumes) {
 				names = []string{m.Volumes[idx].Name}
 			}
 		case TabNetworks:
-			if len(m.Networks) > idx {
+			if idx < len(m.Networks) {
 				names = []string{m.Networks[idx].Name}
 			}
 		}
 	} else {
-		// Resolve based on command name
 		switch cmd.Name {
 		case "rmi":
-			matches := command.MatchImages(cmd.Args[0], m.Images)
-			for _, i := range matches {
+			for _, i := range command.MatchImages(cmd.Args[0], m.Images) {
 				names = append(names, i.Repository)
 			}
 		case "rmv":
-			matches := command.MatchVolumes(cmd.Args[0], m.Volumes)
-			for _, v := range matches {
+			for _, v := range command.MatchVolumes(cmd.Args[0], m.Volumes) {
 				names = append(names, v.Name)
 			}
 		case "rmn":
-			matches := command.MatchNetworks(cmd.Args[0], m.Networks)
-			for _, n := range matches {
+			for _, n := range command.MatchNetworks(cmd.Args[0], m.Networks) {
 				names = append(names, n.Name)
 			}
 		case "prune":
 			names = []string{"all unused resources"}
 		default:
-			targets := command.ResolveTargets(cmd.Args, m.Containers)
-			for _, t := range targets {
+			for _, t := range command.ResolveTargets(cmd.Args, m.Containers) {
 				names = append(names, t.Name)
 			}
 		}
@@ -293,7 +354,8 @@ func (m Model) renderCommandPreview() string {
 		return ""
 	}
 
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true).Render(
-		fmt.Sprintf("Will %s: %s", cmd.Name, strings.Join(names, ", ")),
-	)
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("244")).
+		Italic(true).
+		Render(fmt.Sprintf("Will %s: %s", cmd.Name, strings.Join(names, ", ")))
 }

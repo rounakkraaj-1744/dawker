@@ -34,16 +34,22 @@ var (
 			Bold(true)
 
 	ItemStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
+			PaddingLeft(1)
 
 	SelectedItemStyle = lipgloss.NewStyle().
 			Background(SelectedBg).
 			Foreground(White).
 			Bold(true).
-			PaddingLeft(2)
+			PaddingLeft(1)
 
 	StatusRunningStyle = lipgloss.NewStyle().Foreground(Green)
 	StatusExitedStyle  = lipgloss.NewStyle().Foreground(Red)
+
+	EmptyStateStyle = lipgloss.NewStyle().
+			Foreground(Gray).
+			Italic(true).
+			PaddingLeft(2).
+			PaddingTop(1)
 
 	FooterStyle = lipgloss.NewStyle().
 			Foreground(Gray).
