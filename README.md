@@ -47,10 +47,18 @@ Get up and running in under a minute.
 * Go 1.21+
 * A local Docker Daemon running at `/var/run/docker.sock`
 
+### Install (One-liner)
+
+The fastest way to install Dawker on Mac or Linux:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/rounakk/dawker/main/install.sh | bash
+```
+
 ### Install (From Source)
 
 ```bash
-git clone https://github.com/yourusername/dawker.git
+git clone https://github.com/rounakkraaj-1744/dawker.git
 cd dawker
 go build -o dawker cmd/main.go
 ./dawker
@@ -61,7 +69,7 @@ go build -o dawker cmd/main.go
 Download the latest release and install:
 
 ```bash
-curl -L https://github.com/yourusername/dawker/releases/latest/download/dawker-linux -o dawker
+curl -L https://github.com/rounakkraaj-1744/dawker/releases/latest/download/dawker-linux -o dawker
 chmod +x dawker
 sudo mv dawker /usr/local/bin/
 ```
